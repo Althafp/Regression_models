@@ -1,70 +1,295 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Ship Resistance Predictor</title>
+    <title>Ship Resistance Prediction</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body { padding: 20px; background-color: #f5f7fa; }
+        .container { max-width: 1400px; }
+        .card { box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 10px; }
+        .model-metrics { margin-top: 30px; }
+        .prediction-form { margin-top: 30px; }
+        .plot-container { margin-top: 30px; }
+        .accordion .card { border: none; margin-bottom: 10px; }
+        .accordion .card-header { background-color: #e9ecef; cursor: pointer; }
+        .accordion .card-header h5 { margin: 0; display: flex; align-items: center; justify-content: space-between; }
+        .param-form { background-color: #ffffff; padding: 20px; border-radius: 5px; }
+        .btn-primary { background-color: #007bff; border-color: #007bff; }
+        .btn-success { background-color: #28a745; border-color: #28a745; }
+        .btn-info { background-color: #17a2b8; border-color: #17a2b8; }
+        .btn-warning { background-color: #ffc107; border-color: #ffc107; }
+        .table { background-color: #ffffff; }
+        .table-success { background-color: #d4edda !important; }
+        .form-control:focus { border-color: #007bff; box-shadow: 0 0 5px rgba(0,123,255,0.3); }
+        h1, h3, h4, h5 { color: #343a40; }
+        .dropdown-menu { min-width: 200px; }
+        .table th, .table td { text-align: center; vertical-align: middle; }
+    </style>
 </head>
-<body class="p-4">
-    <h2 class="mb-4">Ship Resistance (Rts) Prediction App</h2>
-
-    <form method="POST">
-        <button type="submit" name="train" value="1" class="btn btn-success mb-3">Train All Models</button>
-    </form>
-
-    {% if trained_metrics %}
-        <h4>Model Training Metrics</h4>
-        <table class="table table-bordered">
-            <thead><tr><th>Model</th><th>R2 Score</th><th>MSE</th><th>MAE</th></tr></thead>
-            <tbody>
-            {% for model, metrics in trained_metrics.items() %}
-                <tr {% if model == best_model_name %} style="background-color: #d4edda;" {% endif %}>
-                    <td><b>{{ model }}</b></td>
-                    <td>{{ metrics['R2 Score'] }}</td>
-                    <td>{{ metrics['MSE'] }}</td>
-                    <td>{{ metrics['MAE'] }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-
-        <h5>Best Model: <span class="badge badge-success">{{ best_model_name }}</span></h5>
-
-        <h4 class="mt-4">Select Model and Enter Input Parameters</h4>
-        <form method="POST">
-            <div class="form-group">
-                <label>Select Model for Prediction</label>
-                <select class="form-control" name="selected_model">
-                    {% for model in model_options %}
-                        <option value="{{ model }}">{{ model }}</option>
-                    {% endfor %}
-                </select>
+<body>
+    <div class="container">
+        <h1 class="mb-4 text-center">Ship Resistance Prediction</h1>
+        
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0">Model Training and Parameter Configuration</h3>
             </div>
-
-            {% for param in ['length', 'breadth', 'avg_draft', 'displacement', 'wetted_area', 'block_coeff', 'vs_start', 'vs_end', 'vs_step'] %}
-                <div class="form-group">
-                    <label>{{ param.replace('_', ' ').title() }}</label>
-                    <input type="number" step="any" class="form-control" name="{{ param }}" required>
+            <div class="card-body">
+                <form method="post" action="/" class="param-form" id="all-models-form">
+                    <div class="accordion" id="modelAccordion">
+                        {% for model, info in model_descriptions.items() %}
+                        <div class="card">
+                            <div class="card-header" id="heading_{{ sanitize_model_name(model) }}">
+                                <h5 class="mb-0">
+                                    <button class="btn btn-link text-dark" type="button" data-toggle="collapse" 
+                                            data-target="#collapse_{{ sanitize_model_name(model) }}" aria-expanded="true" 
+                                            aria-controls="collapse_{{ sanitize_model_name(model) }}">
+                                        {{ model }}
+                                    </button>
+                                    <form method="post" action="/" class="single-model-form" style="display: inline;">
+                                        <input type="hidden" name="model_name" value="{{ model }}">
+                                        {% for param in info.parameters %}
+                                        <input type="hidden" name="{{ sanitize_model_name(model) }}_{{ param.name }}" 
+                                               class="param-input-{{ sanitize_model_name(model) }}-{{ param.name }}"
+                                               value="{% if current_params[param.name] is defined %}{{ current_params[param.name] }}{% else %}{{ param.default }}{% endif %}">
+                                        {% endfor %}
+                                        <button type="submit" name="train_single" class="btn btn-warning btn-sm">Train Model</button>
+                                    </form>
+                                </h5>
+                            </div>
+                            <div id="collapse_{{ sanitize_model_name(model) }}" class="collapse" 
+                                 aria-labelledby="heading_{{ sanitize_model_name(model) }}" data-parent="#modelAccordion">
+                                <div class="card-body">
+                                    <h6>How It Works</h6>
+                                    <p>{{ info.description }}</p>
+                                    <h6>Importance in Ship Resistance Prediction</h6>
+                                    <p>{{ info.importance }}</p>
+                                    <h6>Impact on Metrics</h6>
+                                    <p>{{ info.impact_on_metrics }}</p>
+                                    <h6>When to Adjust</h6>
+                                    <p>{{ info.when_to_adjust }}</p>
+                                    <h6>Good Fit</h6>
+                                    <p>{{ info.good_fit }}</p>
+                                    <h6>Strategy</h6>
+                                    <p>{{ info.strategy }}</p>
+                                    {% if info.parameters %}
+                                    <h6>Configure Parameters for {{ model }}</h6>
+                                    <div class="form-row">
+                                        {% for param in info.parameters %}
+                                        <div class="form-group col-md-4">
+                                            <label for="{{ sanitize_model_name(model) }}_{{ param.name }}">{{ param.name.replace('_', ' ').title() }}</label>
+                                            <input type="{{ param.type }}" name="{{ sanitize_model_name(model) }}_{{ param.name }}" 
+                                                   id="{{ sanitize_model_name(model) }}_{{ param.name }}"
+                                                   value="{% if current_params[param.name] is defined %}{{ current_params[param.name] }}{% else %}{{ param.default }}{% endif %}" 
+                                                   min="{{ param.min }}" max="{{ param.max }}" step="{{ param.step }}" 
+                                                   class="form-control param-visible-{{ sanitize_model_name(model) }}-{{ param.name }}"
+                                                   placeholder="{{ param.name.replace('_', ' ').title() }}"
+                                                   oninput="updateHiddenInput('{{ sanitize_model_name(model) }}', '{{ param.name }}', this.value)">
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        <button type="submit" name="train" class="btn btn-primary mt-3">Train All Models</button>
+                    </div>
+                    
+                </form>
+                
+                {% if train_result %}
+                <div class="alert {% if 'Error' in train_result %}alert-danger{% else %}alert-success{% endif %} mt-3">
+                    {{ train_result }}
                 </div>
-            {% endfor %}
-
-            <button type="submit" name="predict" value="1" class="btn btn-primary">Predict</button>
-        </form>
-    {% endif %}
-
-    {% if prediction_table %}
-        <h4 class="mt-4">Prediction Results</h4>
-        {{ prediction_table|safe }}
-    {% endif %}
-
-    {% if plot_url %}
-        <h4 class="mt-4">Vs vs Predicted Rts Plot</h4>
-        <img src="{{ plot_url }}" class="img-fluid">
-    {% endif %}
-    {% if power_plot_url %}
+                {% endif %}
+                
+                {% if trained_metrics %}
+                <div class="model-metrics">
+                    <h3 class="mt-4">Model Performance Metrics</h3>
+                    {% if best_model_name %}
+                    <div class="alert alert-success">
+                        Best Model: <strong>{{ best_model_name }}</strong> (based on balanced performance and low overfitting risk)
+                    </div>
+                    {% endif %}
+                    <table class="table table-bordered">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th>Model</th>
+                                <th>R2 Score</th>
+                                <th>MSE</th>
+                                <th>MAE</th>
+                                <th>View Plot</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for model_name, metrics in trained_metrics.items() %}
+                            <tr {% if model_name == best_model_name %}class="table-success"{% endif %}>
+                                <td>{{ model_name }}</td>
+                                <td>{{ metrics['R2 Score'] }}</td>
+                                <td>{{ metrics['MSE'] }}</td>
+                                <td>{{ metrics['MAE'] }}</td>
+                                <td>
+                                    {% if training_plots[model_name] and training_plots[model_name]|length > 0 %}
+                                    <div class="dropdown">
+                                        <button class="btn btn-info btn-sm dropdown-toggle" type="button" 
+                                                id="dropdown_{{ sanitize_model_name(model_name) }}" data-toggle="dropdown" 
+                                                aria-haspopup="true" aria-expanded="false">
+                                            View Plot
+                                        </button>
+                                        <div class="dropdown-menu" aria-labelledby="dropdown_{{ sanitize_model_name(model_name) }}">
+                                            {% for plot_type in model_descriptions[model_name].plot_types %}
+                                            {% if training_plots[model_name][plot_type] %}
+                                            <form method="post" action="/">
+                                                <input type="hidden" name="selected_model" value="{{ model_name }}">
+                                                <input type="hidden" name="plot_type" value="{{ plot_type }}">
+                                                <button type="submit" name="show_plot" class="dropdown-item">{{ plot_type }}</button>
+                                            </form>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    {% else %}
+                                    <span>No plots available</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if selected_plot %}
+                    <div class="plot-container text-center mt-4">
+                        <h4>Training Plot</h4>
+                        <img src="{{ selected_plot }}" alt="Training Plot" class="img-fluid" style="max-width: 600px;">
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card prediction-form mt-4">
+            <div class="card-header bg-success text-white">
+                <h3 class="mb-0">Predict Ship Resistance</h3>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/">
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label for="selected_model">Select Model for Prediction</label>
+                            <select name="selected_model" id="selected_model" class="form-control" required>
+                                {% for model in model_options %}
+                                <option value="{{ model }}">{{ model }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <h5>Ship Parameters</h5>
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="length">Length BP [m]</label>
+                            <input type="number" step="0.01" name="length" id="length" class="form-control" required placeholder="e.g., 100.0">
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="breadth">Breadth [m]</label>
+                            <input type="number" step="0.01" name="breadth" id="breadth" class="form-control" required placeholder="e.g., 20.0">
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="avg_draft">Avg Draft [m]</label>
+                            <input type="number" step="0.01" name="avg_draft" id="avg_draft" class="form-control" required placeholder="e.g., 5.0">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="displacement">Displacement [m³]</label>
+                            <input type="number" step="0.01" name="displacement" id="displacement" class="form-control" required placeholder="e.g., 5000.0">
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="wetted_area">Wetted Surface Area [m²]</label>
+                            <input type="number" step="0.01" name="wetted_area" id="wetted_area" class="form-control" required placeholder="e.g., 1000.0">
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="block_coeff">Block Coefficient</label>
+                            <input type="number" step="0.001" name="block_coeff" id="block_coeff" class="form-control" required placeholder="e.g., 0.65">
+                        </div>
+                    </div>
+                    
+                    <h5>Speed Range</h5>
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="vs_start">Vs Start [knots]</label>
+                            <input type="number" step="0.5" name="vs_start" id="vs_start" class="form-control" value="5" required>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="vs_end">Vs End [knots]</label>
+                            <input type="number" step="0.5" name="vs_end" id="vs_end" class="form-control" value="15" required>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="vs_step">Vs Step [knots]</label>
+                            <input type="number" step="0.1" name="vs_step" id="vs_step" class="form-control" value="0.5" required>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" name="predict" class="btn btn-success">Predict Resistance</button>
+                </form>
+            </div>
+        </div>
+        
+        {% if prediction_table %}
+        <div class="card mt-4">
+            <div class="card-header bg-info text-white">
+                <h3 class="mb-0">Prediction Results</h3>
+            </div>
+            <div class="card-body">
+                {{ prediction_table|safe }}
+                
+                {% if plot_url %}
+                <div class="plot-container text-center mt-4">
+                    <h4>Speed vs Predicted Resistance (Rts)</h4>
+                    <img src="{{ plot_url }}" alt="Resistance Plot" class="img-fluid" style="max-width: 600px;">
+                </div>
+                {% endif %}
+                
+                {% if power_plot_url %}
+                <div class="plot-container text-center mt-4">
+                    <h4>Speed vs Effective Power (PE)</h4>
+                    <img src="{{ power_plot_url }}" alt="Power Plot" class="img-fluid" style="max-width: 600px;">
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
     
-        <h4>Power Analysis</h4>
-        <img src="{{ power_plot_url }}" alt="Power Plot" class="img-fluid">
-    
-    {% endif %}
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        // Sync visible input changes to hidden inputs for single-model forms
+        function updateHiddenInput(model, param, value) {
+            console.log('Updating hidden input:', model, param, value);
+            var hiddenInput = document.querySelector('.param-input-' + model + '-' + param);
+            if (hiddenInput) {
+                hiddenInput.value = value;
+            }
+        }
+
+        // Debug form submissions
+        document.getElementById('all-models-form').addEventListener('submit', function(e) {
+            console.log('Train All Models form submitted');
+            var formData = new FormData(this);
+            console.log('Form data:', Object.fromEntries(formData));
+        });
+
+        document.querySelectorAll('.single-model-form').forEach(function(form) {
+            form.addEventListener('submit', function(e) {
+                console.log('Single model form submitted for:', this.querySelector('input[name="model_name"]').value);
+                var formData = new FormData(this);
+                console.log('Form data:', Object.fromEntries(formData));
+            });
+        });
+    </script>
 </body>
 </html>
